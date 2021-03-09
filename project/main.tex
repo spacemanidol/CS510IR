@@ -1,0 +1,56 @@
+\documentclass[sigplan,screen]{acmart}
+\AtBeginDocument{%
+  \providecommand\BibTeX{{%
+    \normalfont B\kern-0.5em{\scshape i\kern-0.25em b}\kern-0.8em\TeX}}}
+
+\begin{document}
+\title{CS510 Project Proposal: Exploring Efficiency in IR Model Pruning}
+
+
+\author{Daniel Campos}
+\email{dcampos3@illinois.edu}
+
+\begin{abstract}
+Neural Networks have proven to be effective methods for retrieving relevant document however these methods can prove difficult to use in production. Neural models tend to be large and require specialized hardware for inference(GPU, TPU, FPGA, etc) which makes them difficult to deploy for all use cases. Researchers in fields like computer vision have leveraged methods in model compression such as structured and unstructured pruning to decrease model size while preserving or exceeding original model performance. In our work we will explore how model compression behaves on information retrieval tasks.   
+\end{abstract}
+\keywords{information retrieval, network pruning}
+\maketitle
+\section{Introduction}
+Neural Networks have become popular choices for complex computation tasks like image recognition \cite{Howard2017MobileNetsEC}, image generation \cite{Goodfellow2014GenerativeAN}, speech processing \cite{Zhao2017RecurrentCN}, and question answering \cite{Seo2017BidirectionalAF}. These networks have grown to hundred billions of parameters \cite{Brown2020LanguageMA} which require specialized hardware like clusters of GPUs and FPGAs in order to infer on unseen data. Recent work has shown that larger networks can learn quicker \cite{Li2020TrainLT}, are more accurate and are more sample efficient \cite{Kaplan2020ScalingLF}. Seeking to allow the improvements that large models have brought to be used on smaller devices and in a more energy efficient way, researchers have explored methods like: quantization, distillation and pruning, which produce smaller networks that approximate, match, or exceed the original network performance. \\ 
+Model distillation, quantization, and pruning have emerged as successful methods to produce smaller networks from the original over-parametized network. In model distillation \cite{Ba2014DoDN} the original network is used to train a smaller network to mimic the behavior of the large network. In model quantization \cite{Han2016DeepCC} models are made smaller by  reducing the numbers of bits that represent each weight. Model Pruning \cite{LeCun1989OptimalBD} has focused on finding sub-networks in the original network by structured and unstructured pruning. In structured pruning, successful sub-networks are found by removing neurons  \cite{Wang2019StructuredPF} or larger network specific structures like attention heads \cite{Voita2019AnalyzingMS}. In unstructured pruning the successful sub-networks are found by setting individual weights to zero \cite{Kwon2019StructuredCB}. \\
+Using network pruning, The Lottery Ticket Hypothesis \cite{Frankle2019TheLT} proved the concept that in large neural networks there can exist a sub network which can match the accuracy of the full network despite its smaller size. Building on the notion that there are many sub networks in an overparamertized network, network pruning  can be formulated as an optimization problem. Given an initial structure $S$ and a target network size $\epsilon$ the goal is to find the sub network $s_m$ of size $\epsilon$ which maximizes the model performance. \\
+We believe that neural models will only continue to grow and we seek to understand how model sparsity effects performance for Information Retrieval (IR) tasks. To research the topic we will apply standard unstructured pruning methods to a variety of neural information retrieval methods and validate on model performance. 
+\section{Problem Description and Project Plan}
+In this project we seek to answer the following questions: 
+\begin{enumerate}
+    \item Can we achieve a high sparsity(80\%+) on neural IR methods and retain performance?
+    \item How do results of IR pruning compare to computer vision and other NLP tasks.
+\end{enumerate}
+To answer these questions we will use the MSMARCO passage ranking dataset (MPR) \cite{Campos2016MSMA} and and explore how performance on well established neural IR method varies with sparsity. \\
+The MPR is a dataset which originates from a question answering dataset. The original dataset consists of 8.8 million passages and 1 million user queries issued to a commercial search engine. For each query, a judge read the top 10 passages extracted by Bing and wrote an answer to the query and attributed the answer to one or more passages. The MPR is an adaptation of the question answering dataset to produce a passage ranking tasks. The document collection is a combination of all unique passages from the question answering task and the relevance judgements are binary labels representing which passage was used to generate the human generated answer. As the tasks is recall focused, the evaluation metric is Mean Reciprocal Rank (MRR) @1000. The large data regime of this dataset has made it one of the most popular evaluation frameworks for neural IR with over 100 submissions and was used in the 2019, 2020, and 2021 TREC Deep Learning Track. \\
+Time is our main constraint but we seek to implement a variety of neural IR models: a neural language model based on BERT \cite{Devlin2019BERTPO}, a non language model transformer based model such as Conformer-Kernel \cite{Mitra2020ConformerKernelWQ}, and a convolutional neural model such as Conv-KNRM \cite{10.1145/3159652.3159659}.\\
+For each of these models we will prune using gradual magnitude pruning with target sparsity's of 50-95\% in 5\% increments. This will effectively give us 30 different models which we will evaluate on the validation portion of the MSMARCO passage ranking and the TREC Deep Learning dataset. \\
+We believe the results of our work could motivate our future research and that of the broader IR community. 
+\subsection{Work Plan}
+Our work plan is broad but is laid out below. We may decrease the amount of pruned models and models implemented based on compute availability and coding efficiency.  
+\begin{enumerate}
+    \item Initial dataset exploration - March 30th
+    \item Baseline model running and evaluated - April 15th
+    \item Models pruned and evaluated - April 30th
+    \item Presentation of results and paper - May 5th
+\end{enumerate}
+\section{Related Work}
+\subsection{Neural Information Retrieval}
+Like many computer science fields, Information Retrieval has seen neural network based systems out performing previous systems. Systems like DUET \cite{Mitra2017LearningTM}, DSSM \cite{Huang2013LearningDS}, C-KRNM \cite{10.1145/3159652.3159659}, and C-DSSM \cite{Shen2014LearningSR} built performant systems which rivaled performance of traditional non neural methods. With the introduction of neural language models countless BERT-based models produced new state of the art results similar to many other NLP fields. Building on the success of the transformer and seeking to build document wide dependency modeling models leveraging the transformer such as Conformer-Kernel\cite{Mitra2020ConformerKernelWQ} have shown efficiency in quality and scale. 
+\subsection{Model Compression}
+Neural network compression is an area that has attracted the attention of researchers for the last few decades. Methods for producing smaller networks that approximate original network performance include: distillation, quantization, structured and unstructured pruning. While each of these methods can compress models substantially on their own many researchers have found that some combination of these methods can produce the smallest models with the highest performance \cite{Polino2018ModelCV}, \cite{Sanh2020MovementPA}. \\
+Model distillation \cite{Ba2014DoDN} addresses compressing models by first training a large network and calling it a teacher. Then using this teacher model a smaller student model learns to approximate what the teacher model would do. This framework is quite popular because it can leverage existing large models easily and the student model can be designed to fit the application requirements in terms of speed and model size. Distillation has been one of the most common methods of deployment of large scale language models where student models like DistilBERT \cite{Sanh2019DistilBERTAD} can approximate full model performance at a fraction of the size. \\
+Model quantization \cite{Gong2014CompressingDC} \cite{Han2016DeepCC} addresses compressing models by reducing the number of bits that are require to represent parameters in a model. In simple implementations this means changing representation of weights from Float32 to float16(effectively cutting model size in half). Complex implementations tune networks to find the smallest amount of bits that can be used for weights, biases, and gradient updates using values as low as 1 bit \cite{Courbariaux2016BinarizedNN}. Quantization is particularly effective because it both leverages that networks are defaulted to a level of precision which is too high and by decreasing the size of representations networks are forced to share weights making networks more robust. \\
+Model pruning \cite{LeCun1989OptimalBD} addresses model compression by decreasing the connection in a network. The goal of network pruning is to produce a sub network of the original network which optimizes some network property(accuracy, speed, robustness) while preserving the original network function. Network pruning has been show to produce a similar effect to random noise injection \cite{Bartoldson2019TheGT} and this noise can be used to make the network more efficient. Bartoldson et al., showed that network pruning is not just used for decreasing size but can be used to increase the generalization of the network. 
+As mentioned earlier, there is structured pruning and unstructured pruning. In structured pruning, the structure of the network is altered by removal of entire neurons, layers, or portions neural network. This method has proven especially successful in language model compression where despite having dozens of attention heads \cite{Vaswani2017AttentionIA} few heads do most of the work and the rest can be removed \cite{Michel2019AreSH}. In unstructured pruning the network structure is altered by removal of individual weights. Unstructured pruning when paired with optimization engines can produce networks that are smaller, more accurate, and run faster than the original network. \\
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{bibliography}
+%\appendix
+\end{document}
+\endinput
+
