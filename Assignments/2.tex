@@ -4,49 +4,45 @@
 \usepackage{hyperref}
 \usepackage{boxedminipage}
 \usepackage[ruled,vlined]{algorithm2e}
+\usepackage{mathtools}
 
+\newcommand\myeq{\stackrel{\mathclap{\normalfont\mbox{rank}}}{=}}
 \newcommand{\floor}[1]{\lfloor #1 \rfloor}
 \newcommand{\ceil}[1]{\lceil #1 \rceil}
 
-\title{CS 510 Assignment 1:A Poisson distribution }
+\title{CS 510 Assignment 2}
 \author{Daniel Campos}
-\date{February 7th,2021}
+\date{March 14th,2021}
 \begin{document}
 \maketitle
-\section{Log Likelihood of Poisson distribution}
-\subsection{Solution}
-First we find the likelihood function
-\begin{equation}
-    L(u) = \prod_{i = 1}^{n} \frac{{u^x}{e^{-u}}}{x!}
-\end{equation}
-Next we find the log likelihood function
-\begin{equation}
-L(u) = \sum_{i=1}^{n} (x_i*log(u) - u - log(x_i)!)
-\end{equation}
-\begin{equation}
-L(u) = log(u) * \sum_{i=1}^{n} x_i - n*u - \sum_{i=1}^{n} log(x_i)!
-\end{equation}
-\section{Derivative of the log likelihood}
-\subsection{Solution}
-\begin{equation}
-    \frac{d}{du} = \frac{\sum_{i=1}^{n} x_i}{u} - n
-\end{equation}
-\section{Solve for MLE of U}
-\subsection{Solution}
-We take our prior derivative and set to 0 
-\begin{equation}
-    \frac{d}{du} = \frac{\sum_{i=1}^{n} x_i}{u} - n = 0 
-\end{equation}
-\begin{equation}
-    n= \frac{\sum_{i=1}^{n} x_i}{u}
-\end{equation}
-\begin{equation}
-    nu= \frac{\sum_{i=1}^{n} x_i}{1}
-\end{equation}
-\begin{equation}
-    u= \frac{\sum_{i=1}^{n} x_i}{n}
-\end{equation}
-\begin{equation}
-    u= \bar{x}
-\end{equation}
+\section{Probabilistic Retrieval Model}
+\subsection{Multinominal Ranking}
+\subsubsection{Show that ranking if a document is relevant to a query is equivalent to the sum of the probability of each word being relevant to the query}
+First off, recapping the RSJ model where $score(Q,D) \myeq  \sum_{i=1, d_i=q_i=1}^k \log \frac{p_i(1-q_i)}{q_i(1-p_i)} $. We know that a multi-variate Bernoulli models focuses on the presence and absence of a feature where for IR this feature is occurrence in the document. We also know that a Multinomial model leverages the number of counts of a feature, commonly referred to as term frequency. Essentially, a Bernoulli model is the same as a multinomial model where all frequencies have been simplified to 1. Thus the first step is to introduce the term frequency into the calculation which gives $score(Q,D) \myeq  \sum_{i=1, d_i=q_i=1}^k c(w,D) \log \frac{p_i(1-q_i)}{q_i(1-p_i)} $. We then amplify the summation from all terms in the query present in the document ($\sum_{i=1, d_i=q_i=1}^k$) to all the words in the vocabulary ($\sum_{w \in V}$) since we can no longer just focus on term occurrence but now have to focus on frequency. Since we have now are modeling the frequency of a feature instead of its absence/existence we drop the normalization of $(1-q_i)$ and $(1-p_i)$. Thus we arrive at our target formula $score(Q,D) \myeq  \sum_{w \in V} c(w,D) \log \frac{p(w|Q, R=1)}{p(w|Q, R=0)} $
+\subsubsection{How many parameters are in such a model}
+2: $p(w|Q, R=1)$ for $w \in V$, and $p(w|Q, R=0)$ for $w \in V$
+\subsection{Give the formula for Maximum likelihood estimate of $p(w | Q, R= 0)$}
+$p(w | Q, R=0) = \sum_{D \in C} \frac{tf_w}{|D|}$ where $tf_w$ is the amount of times a word $w$ occurs in document $D$ and $|D|$ is the document length.
+\subsection{Give the formula for Maximum likelihood estimate of $p(w | Q, R= 1)$ where we use the query as the only relevant document}
+$p(w | Q, R=1) = \frac{tf_w}{|Q|}$ where $tf_w$ indicates the occurrence of word $w$ in the query $Q$ and $|Q|$ represents the query length.
+\subsection{Give the formula for smoothing the maximum likelihood estimate using Jelinek-Mercer with the collection language model}
+$p(w | Q, R=1) = (1- \beta) \frac{tf_w}{|Q|}+ \beta p(w|C)$ where $tf_w$ indicates the occurrence of word $w$ in the query $Q$ and $|Q|$ represents the query length, $\beta$ is a Jelinek-Mercer smoothing coefficient and $p(w|C)$ is the language model unigram probability.
+\subsection{Write Down the retrieval function. Does the retrieval function capture TF, IDF, document length normalization?}
+$score(Q,D) \myeq  \sum_{w \in V} c(w,D) \log \frac{(1- \beta) \frac{tfq_w}{|Q|}+ \beta p(w|C)}{\sum_{D \in C} \frac{tfd_w}{|D|}} $ where $tfq_w$ is the term frequency in the query $Q$ and $tfd_w$ is the terfm frequency in document $D$, $|Q|$ represents the query length,|D|$ is the document length$, $\beta$ is a Jelinek-Mercer smoothing coefficient and $p(w|C)$ is the language model unigram probability. \\
+This captures TF because we take the term probability and multiply it by the frequency, it captures IDF because we normalize the probability of the word in Query given how common the word is in the corpus and it captures document length normalization because each of our estimations normalize frequency by query/document length.
+\section{Language Models}
+\subsection{Show that if we use query likelihood scoring method with Jelinker-Mercer smoothing function we can rank documents with \\$score(Q,D) = \sum_{w \in Q \cap D} c(w,Q)\log(1 + \frac{(1-\lambda)c(w,D)}{\lambda p (w| REF)*\abs{D}})$}
+This ranking function is ranking documents by assigning documents score by the recall of query terms. First, the sum $\sum_{w \in D \cap D}$ means this will rank documents that have matches on query terms higher than any without. This is necessary to remove any noise that non matched by high probability terms may have for document score. Next, this function multiplies the probability by the count of word occurrence in the query, $c(q,Q)$ which serves to add higher importance to common query terms. Finacy the ranking function includes a measure of term relevance in the given document. The numerator $(1-\lambda)c(w,D)$ models the term occurrence in the document. The denominator $\lambda p(w|C)*|D|$ represents the expected occurrence of the term in the document given its commonality in the corpus since $p(w|C)$ is overall unigram occurrence which is multiplied by document length $|D$ to provide an expected amount of term occurrences in document. This means that documents that have higher than the corpus wide expected term occurrence(and thus more relevant) have a higher probability than those that have a less than corpus average occurrence. 
+\subsection{Vector Space}
+\subsubsection{What would be the query vector}
+a
+\subsubsection{What would be the document vector}
+a
+\subsubsection{What is the similarity function}
+a
+\subsubsection{Does the term weight in the document vector capture TF-IDF weighting and the document length normalization heuristics?}
+It captures all 3 heuristics 
+\subsection{Are artificially long documents penalized using Jelinek-Mercer and Dirichlet prior smoothing?}
+\section{KL-Divergence}
+\subsection{Show that KL Divergence covers the query likelihood retrieval function if the language model is set to the word distribution in the query}
 \end{document}
