@@ -1,0 +1,37 @@
+\documentclass[11pt]{article}
+
+\usepackage{alltt,fullpage,graphics,color,epsfig,amsmath, amssymb}
+\usepackage{hyperref}
+\usepackage{boxedminipage}
+\usepackage[ruled,vlined]{algorithm2e}
+
+\newcommand{\floor}[1]{\lfloor #1 \rfloor}
+\newcommand{\ceil}[1]{\lceil #1 \rceil}
+
+\title{CS 510 Experimental Lab}
+\author{Daniel Campos}
+\date{April 14th,2021}
+\begin{document}
+\maketitle
+\section{General Info}
+Our team is blender, our team is: Daniel Campos and our task is the 2021 CLEF eHealth IR Task on consumer health search: Subtask 1
+\section{Goal of Participation}
+The goal of participation in this task is to build real world experience on how to create a high quality search stack on a novel corpus. Using the health search corpus I explored the effect that variations in ranking methods can have on model performance. First, I seek to understand how variations in BM25 and RM3 hyperparameters affect relevance. Second, I seek to understand the effect of using dense systems (BERT base) compare to sparse methods and how they can be hybridized. By understanding how these results play together I learned how to best create simple search systems. 
+\section{Activities}
+Our activities broadly can be categorized into three areas: index generation, search system creation, and model experimentation. For index generation we build scripts which take the CLEF corpus and turn it into a format accessible to the PySerini search library. Using this processed corpus we then generate the index which we use for our experiments. Index creation generally was quite slow but in experimentation's on using more threads we were able to have large speedups. Once we had an index we went ahead and created our search systems. Leveraging the PySerini library, we created search methodologies which would allow various forms of experimentation around sparse search hyper parameters and on combinations with dense search methods. We did not have any major drawbacks in this step because of how easy to use and thoughtfully created the libraries are. Once we finalized these search systems we began to produce runs varying all parameters.
+Finding more success in X I stopped optimizing for RM3 metrics. Understanding that each run took N seconds I did 
+\section{Findings}
+The CLEF eHealth ranking task is centered around a 480GB corpus which features 1903 domains and X URLS. While our experiments were focused on the 2021 queries, their evaluation is not yet available so we base our findings on the 2018 task. The 2018 task, like the 2021 task features 50 queries issued on the Health on the Net search service. //
+Our first findings are around the effects seen BM25 Params.//
+#Chart and Table
+Our second findings are around the mixture of Sparse and Dense methods.
+
+Why does Y perform the best
+\section{Error Analysis}
+To explore the failure of our model we looked at a query where our system has the lowest performance:{} 
+In this query we find that it does well on X and badly with X. We believe this failure is because Z
+\section{Summary}
+In this experimental lab what we have learned how a performant search engine can be setup on a novel search task. As shown in our results, we found that there are large variations in relevance based on minor changes in ranking methods.  
+\section{Task division}
+Since Daniel is the only member of this group he has done everything. 
+\end{document}
