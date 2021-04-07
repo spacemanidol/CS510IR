@@ -1,4 +1,4 @@
-'outputs/sparse_original_query0.0.candidate.run'
+
 0.0387
 0.0399
 0.0412
