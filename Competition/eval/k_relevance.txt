@@ -8,4 +8,3 @@
 0.0722
 0.0723
 0.0727
-'outputs/sparse_k1.0_b1.0.candidate.run'
