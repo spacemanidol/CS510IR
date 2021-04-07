@@ -23,20 +23,20 @@ def load_queries(filename):
 
 def load_ranker(args):
     if args.sparse and args.dense:
-        sparse_searcher = SimpleSearcher(args.index_path)
+        sparse_searcher = SimpleSearcher(args.sparse_index_path)
         sparse_searcher.set_bm25(args.k, args.b)
         sparse_searcher.set_rm3(args.expansion_terms, args.expansion_documents, args.original_query_weight)
         encoder = TCTColBERTQueryEncoder('castorini/tct_colbert-msmarco')
-        dense_searcher = SimpleDenseSearcher(args.index_path, encoder)
+        dense_searcher = SimpleDenseSearcher(args.dense_index_path, encoder)
         hsearcher = HybridSearcher(dense_searcher, sparse_searcher)
     elif args.sparse:
-        sparse_searcher = SimpleSearcher(args.index_path)
+        sparse_searcher = SimpleSearcher(args.sparse_index_path)
         sparse_searcher.set_bm25(args.k, args.b)
         sparse_searcher.set_rm3(args.expansion_terms, args.expansion_documents, args.original_query_weight)
         return sparse_searcher
     elif args.dense:
         encoder = TCTColBERTQueryEncoder('castorini/tct_colbert-msmarco')
-        dense_searcher = SimpleDenseSearcher(args.index_path, encoder)
+        dense_searcher = SimpleDenseSearcher(args.dense_index_path, encoder)
         return dense_searcher
     else:
         print("Choose a valid ranking function sparse(BM25), dense(vector) or a combination of the two")
@@ -70,7 +70,8 @@ if __name__ == "__main__":
     parser.add_argument('--expansion_documents', default=10, type=int, help='RM3 expansion docs')
     parser.add_argument('--original_query_weight', default=1.0, type=float, help='Importance for original query')
     parser.add_argument('--sparse', action='store_true', help='use sparse ranking. Can be combined with dense')
-    parser.add_argument('--tag', default="blender", type=str, help='Tag for run')  
-    parser.add_argument('--index_path', default='/shared/nas/data/m1/dcampos3/clef/index')
+    parser.add_argument('--tag', default="blender", type=str, help='Tag for run')
+    parser.add_argument('--sparse_index_path', default='/shared/nas/data/m1/dcampos3/clef/index')
+    parser.add_argument('--dense_index_path', default='/shared/nas/data/m1/dcampos3/clef/dense_index')
     args = parser.parse_args()
     main(args)
