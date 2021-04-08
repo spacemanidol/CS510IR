@@ -14,8 +14,26 @@
 \begin{document}
 \maketitle
 \section{Problem 1}
-\subsection{Write down the likelihood for log p(D; $\theta$) }
-\subsection{}
-
-
+\subsection{Write down the likelihood for log p(D| $\theta$) }
+\subsection{Derive the E-step and M-step for estimating the unknown parameter $\lambda$ in iteration t, for t = 1, 2}
+\section{Derive the E-step and M-step for estimating p(w|H).}
+\section{Topic Estimation}
+\subsection{Question 1.1}
+Implemented
+\subsection{Question 1.2}
+The first sequence, sampleseq1 and samplemod1 tags every a with 0 and b with 1 since output probabilities for 0 have been set to be A 0.9999 and for 1 have set to be b for 0.99999 and the transmission probabilities bet weens states are equal. This mean that it is most unlikely that any B receive a 0, a receive a 1 and transferring between 0 to 1 is as common as staying. \\
+For the second sequnce, sampleseq2 and samplemod2 we produce eight zeros followed by 8 ones because of the different mix in transmission probabilities and output probabilities. Our first 8 outputs are 0 because it is dominated by As and as As are unlikley to be produced by 1 the sequence is likely zeros. Once the sequence transitions mostly to b, it is more probable that we had the minor odds of transitioning from 0 to 1 than producing that many B with state 0 so the second eight states are 1. 
+\subsection{Question 1.3}
+See zip.
+\subsection{Question 2.1}
+See zip.
+\subsection{Question 2.2}
+See zip.
+\subsection{Question 3.1}
+The probabilities are slighly off as the model has 0.85583, 0.156617 which should be 0.8, 0.2 and 0.144053, 0.843271 which should be 0.2, 0.8. \\
+The learned tagging is the same as the tagging produced by samplemod2.
+\subsection{Question 3.2}
+Yes this is able to identify DNA and amino acids. \\
+If I insert one P it is able to identify as amino because there are no DNA sequences with P.\\
+If I insert six P after the second A they are also all correctly identified as Aminos. If we look at the trained model we see for P 0.0736726 5.70029e-07 meaning P is never a DNA sequence and always an amino. Even when it is unlikely to go from DNA to amino (0 to 1 0.960808 0.0701715 and 1 to 0 0.0391916 0.929828) since P is never DNA it doesn't change.  
 \end{document}
