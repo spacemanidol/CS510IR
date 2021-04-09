@@ -20,25 +20,25 @@ The goal of participation in this task is to build real world experience on how 
 \section{Activities}
 Our activities broadly can be categorized into three areas: index generation, search system creation, and model experimentation. For index generation we build scripts which take the CLEF corpus and turn it into a format accessible to the PySerini search library. Using this processed corpus we then generate the index which we use for our experiments. Index creation generally was quite slow but in experimentation's on using more threads we were able to have large speedups. Once we had an index we went ahead and created our search systems. Leveraging the PySerini library, we created search methodologies which would allow various forms of experimentation around sparse search hyper parameters and on combinations with dense search methods. The drawbacks in our experiments area mostly have to do with corpus size. Since the corpus is enormous (about 500 gigabytes) any failure is cascading and means discovery of minor issues (naming format) require starting from scratch and take days to run. We wish we could say that it only took us one attempt but in reality we had many mistakes which caused us to repeat slow processes like indexing and document processing. Once we finalized creating search systems we began to produce runs varying all parameters.
 \section{Findings}
-The CLEF eHealth ranking task is centered around a document corpus leveraging CLUEWeb which features 1903 domains and 5.5 million URLS. While our experiments were focused on the 2021 queries, their evaluation is not yet available so we base our findings on the 2018 task. The 2018 task, like the 2021 task features 50 queries issued on the Health on the Net search service. The rankings returned are evaluated in TREC style and there are relevance files optimizing to the document retrievals relevance, authority/trust, and readability. While theoretically evaluation can happen across all TREC metrics there is a focus on NDCG@10, BPref, and RBP. For our experiments we focus only on BM25. We perform 3 sets of experiments in varying the BM25 ranker, varying the hyperparameter for K, varying the hyperparameter for B, and varying the importance of the original query when using query rewriting system RM3. We set the BM25 hyperparameters to standard values of 0.75 for B, 1.2 for K and 1.0 for query term importance. //
-To explore the effects of varying B we fix all hyperparameters on a simple BM25 ranker and gradually vary values of B by 0.1 [0.0, 1.0]. As shown in \ref{tab:varyb} we see that when focused on relevance, a higher value of B is better but as it passes a threshold (somewhere around 0.9) performance decreases. This is slightly higher than the expected and recommended value of 0.75 but we attribute this to the medical nature of these queries. Higher b values driving improved performance generally holds for readability and trust but these other metrics do not have much more condensed variation. We do not see large changes in readability scores despite variation in values which leads us to believe that B does not interact with terms that can represent readability. //
-To explore the effects of varying the value for K we once again fix other values and gradually increase the value of K by 0.1 for [1.0,2]. As shown in \ref{tab:varyk} we see ... for relevance.  \\
+The CLEF eHealth ranking task is centered around a document corpus leveraging CLUEWeb which features 1903 domains and 5.5 million URLS. While our experiments were focused on the 2021 queries, their evaluation is not yet available so we base our findings on the 2018 task. The 2018 task, like the 2021 task features 50 queries issued on the Health on the Net search service. The rankings returned are evaluated in TREC style and there are relevance files optimizing to the document retrievals relevance, authority/trust, and readability. While theoretically evaluation can happen across all TREC metrics there is a focus on NDCG@10, BPref, and RBP. For our experiments we focus only on BM25. We perform 3 sets of experiments in varying the BM25 ranker, varying the hyperparameter for K, varying the hyperparameter for B, and varying the importance of the original query when using query rewriting system RM3. We set the BM25 hyperparameters to standard values of 0.75 for B, 1.2 for K and 1.0 for query term importance. \\
+To explore the effects of varying B we fix all hyperparameters on a simple BM25 ranker and gradually vary values of B by 0.1 [0.0, 1.0]. As shown in \ref{tab:vary-b} we see that when focused on relevance, a higher value of B is better but as it passes a threshold (somewhere around 0.9) performance decreases. This is slightly higher than the expected and recommended value of 0.75 but we attribute this to the medical nature of these queries. Higher b values driving improved performance generally holds for readability and trust but these other metrics do not have much more condensed variation. We do not see large changes in readability scores despite variation in values which leads us to believe that B does not interact with terms that can represent readability. \\
+To explore the effects of varying the value for K we once again fix other values and gradually increase the value of K by 0.1 for [1.0,2]. As shown in \ref{tab:vary-k} we see relevance is relatively uncharged despite variations in K. This is surprising because K values can usually be optimized for the task yet in our results we see no such effect.   \\
 To explore the effect of varying the importance of the original query term we fix BM25 hyperparamets and gradually vary values for initial query term importance by 0.1 [0.0, 1.0]. For query rewriting we explore the simple/standard RM3 engine with a fixed term expansion of 10 terms and 10 document expansions. Given the domain we are not surprised to find that are shown in \ref{tab:vary-rm3}. Medical queries arguably have a much lower fault tolerance for dropped query terms and as a result query variation causes substantial drops. 
 At a high level, we observe that the the average NDCG is quite low despite there being a huge variation in NDCG per query. We attribute this to the difficulty in health search as some are general keyword like: do allergies cause migraines while others use complex and expert language like: antiandrogen therapy for prostate cancer. We believe that given BM25s low performance across the board a second stage ranking engine would be beneficial as we see the recall at 100 scores in the mid 50s across the board. Our experiments point us to the hypothesis that a BM25 ranker with a B of {}, a K of {}, and a original query importance of {} are optimal. We believes this is the case because of what we discussed for query rewriting (sensitivity of medical queries to term dropping) and because how well these rules of thumbs for search are. 
 \begin{table}[]
 \begin{tabular}{|l|l|l|l|} \hline
-B value  & relevance & readability & trust  \\ \hline
-0.0 & 0.0577    & 0.0425     & 0.0484 \\ \hline
-0.1 & 0.0577    & 0.0425     & 0.0484 \\\hline
-0.2 & 0.0652    & 0.0439     & 0.0512 \\\hline
-0.3 & 0.0681    & 0.0445     & 0.0521 \\\hline
-0.4  & 0.0709    & 0.0458     & 0.0537 \\\hline
-0.5 & 0.0721    & 0.0463     & 0.0541 \\\hline
-0.6 & 0.0729    & 0.0465     & 0.0532 \\\hline
-0.7 & 0.0738    & 0.0471     & 0.0532 \\\hline
-0.8 & 0.0757    & 0.0480     & 0.0525 \\\hline
-0.9 & 0.0773    & 0.0473     & 0.0522 \\\hline
-1.0 & 0.0621    & 0.0368     & 0.0401 \\ \hline
+B value & relevance & readability & trust  \\ \hline
+0.0     & 0.0583    & 0.0425      & 0.0486 \\ \hline
+0.1     & 0.0583    & 0.0425      & 0.0486 \\ \hline
+0.2     & 0.0662    & 0.0439      & 0.0516 \\ \hline
+0.3     & 0.0691    & 0.0445      & 0.0524 \\ \hline
+0.4     & 0.0719    & 0.0458      & 0.0540 \\ \hline
+0.5     & 0.0736    & 0.0463      & 0.0543 \\ \hline
+0.6     & 0.0739    & 0.0465      & 0.0536 \\ \hline
+0.7     & 0.0750    & 0.0471      & 0.0535 \\ \hline
+0.8     & 0.0782    & 0.0480      & 0.0530 \\ \hline
+0.9     & 0.0777    & 0.0473      & 0.0521 \\ \hline
+1.0     & 0.0626    & 0.0368      & 0.0403 \\ \hline
 \end{tabular}
 \caption{Results for variation in BM25 B value}
 \label{tab:vary-b}
@@ -63,17 +63,18 @@ v   & relevance & readability & trust  \\ \hline
 \end{table}
 \begin{table}[]
 \begin{tabular}{|l|l|l|l|} \hline
-Original Query Importance   & relevance & readability & trust  \\\hline
-0.1 & 0.0470    & 0.0340     & 0.0387 \\\hline
-0.2 & 0.0490    & 0.0347     & 0.0399 \\\hline
-0.3 & 0.0504    & 0.0361     & 0.0412 \\\hline
-0.  & 0.0515    & 0.0372     & 0.0426 \\\hline
-0.5 & 0.0516    & 0.0385     & 0.0437 \\\hline
-0.6 & 0.0537    & 0.0395     & 0.0454 \\\hline
-0.7 & 0.0549    & 0.0402     & 0.0462 \\\hline
-0.8 & 0.0571    & 0.0407     & 0.0473 \\\hline
-0.9 & 0.0608    & 0.0414     & 0.0487 \\\hline
-1.0 & 0.0718    & 0.0461     & 0.0540 \\\hline
+\multicolumn{1}{|l|}{Original Query Importance} & \multicolumn{1}{l|}{relevance} & \multicolumn{1}{l|}{readability} & \multicolumn{1}{l|}{trust} \\ \hline
+0.0                       & 0.0487                      & 0.0312                      & 0.0366                      \\ \hline
+\multicolumn{1}{|l|}{0.1} & \multicolumn{1}{l|}{0.0537} & \multicolumn{1}{l|}{0.0337} & \multicolumn{1}{l|}{0.0398} \\ \hline
+\multicolumn{1}{|l|}{0.2} & \multicolumn{1}{l|}{0.0560} & \multicolumn{1}{l|}{0.0357} & \multicolumn{1}{l|}{0.0415} \\ \hline
+\multicolumn{1}{|l|}{0.3} & \multicolumn{1}{l|}{0.0585} & \multicolumn{1}{l|}{0.0374} & \multicolumn{1}{l|}{0.0430} \\ \hline
+\multicolumn{1}{|l|}{0.4}  & \multicolumn{1}{l|}{0.0597} & \multicolumn{1}{l|}{0.0378} & \multicolumn{1}{l|}{0.0432} \\ \hline
+\multicolumn{1}{|l|}{0.5} & \multicolumn{1}{l|}{0.0599} & \multicolumn{1}{l|}{0.0391} & \multicolumn{1}{l|}{0.0443} \\ \hline
+\multicolumn{1}{|l|}{0.6} & \multicolumn{1}{l|}{0.0612} & \multicolumn{1}{l|}{0.0391} & \multicolumn{1}{l|}{0.0451} \\ \hline
+\multicolumn{1}{|l|}{0.7} & \multicolumn{1}{l|}{0.0626} & \multicolumn{1}{l|}{0.0399} & \multicolumn{1}{l|}{0.0461} \\ \hline
+\multicolumn{1}{|l|}{0.8} & \multicolumn{1}{l|}{0.0639} & \multicolumn{1}{l|}{0.0406} & \multicolumn{1}{l|}{0.0466} \\ \hline
+\multicolumn{1}{|l|}{0.9} & \multicolumn{1}{l|}{0.0680} & \multicolumn{1}{l|}{0.0426} & \multicolumn{1}{l|}{0.0494} \\ \hline
+\multicolumn{1}{|l|}{1.0} & \multicolumn{1}{l|}{0.0756} & \multicolumn{1}{l|}{0.0475} & \multicolumn{1}{l|}{0.0531} \\ \hline
 \end{tabular}
 \caption{Results for variation in BM25 scores with variations in in initial query importance}
 \label{tab:vary-rm3}
