@@ -1,177 +1,476 @@
-"""
-This examples show how to train a Cross-Encoder for the MS Marco dataset (https://github.com/microsoft/MSMARCO-Passage-Ranking).
-The query and the passage are passed simoultanously to a Transformer network. The network then returns
-a score between 0 and 1 how relevant the passage is for a given query.
-The resulting Cross-Encoder can then be used for passage re-ranking: You retrieve for example 100 passages
-for a given query, for example with ElasticSearch, and pass the query+retrieved_passage to the CrossEncoder
-for scoring. You sort the results then according to the output of the CrossEncoder.
-This gives a significant boost compared to out-of-the-box ElasticSearch / BM25 ranking.
-Running this script:
-python train_cross-encoder.py
-"""
-from torch.utils.data import DataLoader
-from sentence_transformers import LoggingHandler, util
-from sentence_transformers.cross_encoder import CrossEncoder
-from sentence_transformers.cross_encoder.evaluation import CERerankingEvaluator
-from sentence_transformers import InputExample
 import logging
-from datetime import datetime
-import gzip
 import os
-import tarfile
-import tqdm
+import random
+import sys
+from dataclasses import dataclass, field
+from typing import Optional
 
-#### Just some code to print debug information to stdout
-logging.basicConfig(format='%(asctime)s - %(message)s',
-                    datefmt='%Y-%m-%d %H:%M:%S',
-                    level=logging.INFO,
-                    handlers=[LoggingHandler()])
-#### /print debug information to stdout
+import numpy as np
+from datasets import load_dataset, load_metric
+
+import transformers
+
+from transformers import (
+    AutoConfig,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    DataCollatorWithPadding,
+    EvalPrediction,
+    HfArgumentParser,
+    PretrainedConfig,
+    Trainer,
+    TrainingArguments,
+    default_data_collator,
+    set_seed,
+)
+from transformers.trainer_utils import get_last_checkpoint, is_main_process
+from transformers.utils import check_min_version
+
+logger = logging.getLogger(__name__)
+
+from transformers import (
+    AutoConfig,
+    AutoModelForQuestionAnswering,
+    AutoTokenizer,
+    DataCollatorWithPadding,
+    EvalPrediction,
+    HfArgumentParser,
+    PreTrainedTokenizerFast,
+    Trainer,
+    TrainingArguments,
+    default_data_collator,
+    is_datasets_available,
+    is_torch_tpu_available,
+    set_seed,
+)
+
+from transformers.optimization import (
+    Adafactor,
+    AdamW,
+    get_constant_schedule,
+    get_constant_schedule_with_warmup,
+    get_cosine_schedule_with_warmup,
+    get_cosine_with_hard_restarts_schedule_with_warmup,
+    get_linear_schedule_with_warmup,
+    get_polynomial_decay_schedule_with_warmup,
+)
+from transformers.trainer_utils import PredictionOutput, is_main_process
+
+from sparseml.pytorch.optim.manager import ScheduledModifierManager
+from sparseml.pytorch.optim.optimizer import ScheduledOptimizer
+from sparseml.pytorch.utils import ModuleExporter
+
+from distill_trainer import DistillQuestionAnsweringTrainer
+
+@dataclass
+class DataTrainingArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+    Using `HfArgumentParser` we can turn this class
+    into argparse arguments to be able to specify them on
+    the command line.
+    """
+
+    max_seq_length: int = field(
+        default=128,
+        metadata={
+            "help": "The maximum total input sequence length after tokenization. Sequences longer "
+            "than this will be truncated, sequences shorter will be padded."
+        },
+    )
+    overwrite_cache: bool = field(
+        default=False, metadata={"help": "Overwrite the cached preprocessed datasets or not."}
+    )
+    pad_to_max_length: bool = field(
+        default=True,
+        metadata={
+            "help": "Whether to pad all samples to `max_seq_length`. "
+            "If False, will pad the samples dynamically when batching to the maximum length in the batch."
+        },
+    )
+    max_train_samples: Optional[int] = field(
+        default=1e-7,
+        metadata={
+            "help": "For debugging purposes or quicker training, truncate the number of training examples to this "
+            "value if set."
+        },
+    )
+    max_val_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "For debugging purposes or quicker training, truncate the number of validation examples to this "
+            "value if set."
+        },
+    )
+    max_test_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": "For debugging purposes or quicker training, truncate the number of test examples to this "
+            "value if set."
+        },
+    )
+    train_file: Optional[str] = field(
+        default=None, metadata={"help": "A csv or a json file containing the training data."}
+    )
+    validation_file: Optional[str] = field(
+        default=None, metadata={"help": "A csv or a json file containing the validation data."}
+    )
+    test_file: Optional[str] = field(default=None, metadata={"help": "A csv or a json file containing the test data."})
 
 
-#First, we define the transformer model we want to fine-tune
-model_name = 'distilroberta-base'
-train_batch_size = 32
-num_epochs = 1
-model_save_path = 'output/training_ms-marco_cross-encoder-'+model_name.replace("/", "-")+'-'+datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+@dataclass
+class ModelArguments:
+    """
+    Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
+    """
+
+    model_name_or_path: str = field(
+        default='bert-base-uncased'
+        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+    )
+    config_name: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
+    )
+    tokenizer_name: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+    )
+    cache_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
+    )
+    use_fast_tokenizer: bool = field(
+        default=True,
+        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
+    )
+    model_revision: str = field(
+        default="main",
+        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
+    )
+    use_auth_token: bool = field(
+        default=False,
+        metadata={
+            "help": "Will use the token generated when running `transformers-cli login` (necessary to use this script "
+            "with private models)."
+        },
+    )
 
 
-# We train the network with as a binary label task
-# Given [query, passage] is the label 0 = irrelevant or 1 = relevant?
-# We use a positive-to-negative ratio: For 1 positive sample (label 1) we include 4 negative samples (label 0)
-# in our training setup. For the negative samples, we use the triplets provided by MS Marco that
-# specify (query, positive sample, negative sample).
-pos_neg_ration = 4
+def main():
+    # See all possible arguments in src/transformers/training_args.py
+    # or by passing the --help flag to this script.
+    # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-# Maximal number of training samples we want to use
-max_train_samples = 2e7
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+        # If we pass only one argument to the script and it's the path to a json file,
+        # let's parse it to get our arguments.
+        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+    else:
+        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
-#We set num_labels=1, which predicts a continous score between 0 and 1
-model = CrossEncoder(model_name, num_labels=1, max_length=512)
+    # Detecting last checkpoint.
+    last_checkpoint = None
+    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
+        last_checkpoint = get_last_checkpoint(training_args.output_dir)
+        if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
+            raise ValueError(
+                f"Output directory ({training_args.output_dir}) already exists and is not empty. "
+                "Use --overwrite_output_dir to overcome."
+            )
+        elif last_checkpoint is not None:
+            logger.info(
+                f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
+                "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
+            )
 
+    # Setup logging
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+    logger.setLevel(logging.INFO if is_main_process(training_args.local_rank) else logging.WARN)
 
-### Now we read the MS Marco dataset
-data_folder = 'msmarco-data'
-os.makedirs(data_folder, exist_ok=True)
+    # Log on each process the small summary:
+    logger.warning(
+        f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
+        + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+    )
+    # Set the verbosity to info of the Transformers logger (on main process only):
+    if is_main_process(training_args.local_rank):
+        transformers.utils.logging.set_verbosity_info()
+        transformers.utils.logging.enable_default_handler()
+        transformers.utils.logging.enable_explicit_format()
+    logger.info(f"Training/evaluation parameters {training_args}")
 
+    # Set seed before initializing model.
+    set_seed(training_args.seed)
 
-#### Read the corpus files, that contain all the passages. Store them in the corpus dict
-corpus = {}
-collection_filepath = os.path.join(data_folder, 'collection.tsv')
-if not os.path.exists(collection_filepath):
-    tar_filepath = os.path.join(data_folder, 'collection.tar.gz')
-    if not os.path.exists(tar_filepath):
-        logging.info("Download collection.tar.gz")
-        util.http_get('https://msmarco.blob.core.windows.net/msmarcoranking/collection.tar.gz', tar_filepath)
+    # Get the datasets: you can either provide your own CSV/JSON training and evaluation files (see below)
+    # or specify a GLUE benchmark task (the dataset will be downloaded automatically from the datasets Hub).
+    #
+    # For CSV/JSON files, this script will use as labels the column called 'label' and as pair of sentences the
+    # sentences in columns called 'sentence1' and 'sentence2' if such column exists or the first two columns not named
+    # label if at least two columns are provided.
+    #
+    # If the CSVs/JSONs contain only one non-label column, the script does single sentence classification on this
+    # single column. You can easily tweak this behavior (see below)
+    #
+    # In distributed training, the load_dataset function guarantee that only one local process can concurrently
+    # download the dataset.
+    if data_args.task_name is not None:
+        # Downloading and loading a dataset from the hub.
+        datasets = load_dataset("glue", data_args.task_name)
+    else:
+        # Loading a dataset from your local files.
+        # CSV/JSON training and evaluation files are needed.
+        data_files = {"train": data_args.train_file, "validation": data_args.validation_file}
 
-    with tarfile.open(tar_filepath, "r:gz") as tar:
-        tar.extractall(path=data_folder)
+        # Get the test dataset: you can provide your own CSV/JSON test file (see below)
+        # when you use `do_predict` without specifying a GLUE benchmark task.
+        if training_args.do_predict:
+            if data_args.test_file is not None:
+                train_extension = data_args.train_file.split(".")[-1]
+                test_extension = data_args.test_file.split(".")[-1]
+                assert (
+                    test_extension == train_extension
+                ), "`test_file` should have the same extension (csv or json) as `train_file`."
+                data_files["test"] = data_args.test_file
+            else:
+                raise ValueError("Need either a GLUE task or a test file for `do_predict`.")
 
-with open(collection_filepath, 'r', encoding='utf8') as fIn:
-    for line in fIn:
-        pid, passage = line.strip().split("\t")
-        corpus[pid] = passage
+        for key in data_files.keys():
+            logger.info(f"load a local file for {key}: {data_files[key]}")
 
-
-### Read the train queries, store in queries dict
-queries = {}
-queries_filepath = os.path.join(data_folder, 'queries.train.tsv')
-if not os.path.exists(queries_filepath):
-    tar_filepath = os.path.join(data_folder, 'queries.tar.gz')
-    if not os.path.exists(tar_filepath):
-        logging.info("Download queries.tar.gz")
-        util.http_get('https://msmarco.blob.core.windows.net/msmarcoranking/queries.tar.gz', tar_filepath)
-
-    with tarfile.open(tar_filepath, "r:gz") as tar:
-        tar.extractall(path=data_folder)
-
-
-with open(queries_filepath, 'r', encoding='utf8') as fIn:
-    for line in fIn:
-        qid, query = line.strip().split("\t")
-        queries[qid] = query
-
-
-
-### Now we create our training & dev data
-train_samples = []
-dev_samples = {}
-
-# We use 200 random queries from the train set for evaluation during training
-# Each query has at least one relevant and up to 200 irrelevant (negative) passages
-num_dev_queries = 200
-num_max_dev_negatives = 200
-
-# msmarco-qidpidtriples.rnd-shuf.train-eval.tsv.gz and msmarco-qidpidtriples.rnd-shuf.train.tsv.gz is a randomly
-# shuffled version of qidpidtriples.train.full.2.tsv.gz from the MS Marco website
-# We extracted in the train-eval split 500 random queries that can be used for evaluation during training
-train_eval_filepath = os.path.join(data_folder, 'msmarco-qidpidtriples.rnd-shuf.train-eval.tsv.gz')
-if not os.path.exists(train_eval_filepath):
-    logging.info("Download "+os.path.basename(train_eval_filepath))
-    util.http_get('https://sbert.net/datasets/msmarco-qidpidtriples.rnd-shuf.train-eval.tsv.gz', train_eval_filepath)
-
-with gzip.open(train_eval_filepath, 'rt') as fIn:
-    for line in fIn:
-        qid, pos_id, neg_id = line.strip().split()
-
-        if qid not in dev_samples and len(dev_samples) < num_dev_queries:
-            dev_samples[qid] = {'query': queries[qid], 'positive': set(), 'negative': set()}
-
-        if qid in dev_samples:
-            dev_samples[qid]['positive'].add(corpus[pos_id])
-
-            if len(dev_samples[qid]['negative']) < num_max_dev_negatives:
-                dev_samples[qid]['negative'].add(corpus[neg_id])
-
-
-# Read our training file
-train_filepath = os.path.join(data_folder, 'msmarco-qidpidtriples.rnd-shuf.train.tsv.gz')
-if not os.path.exists(train_filepath):
-    logging.info("Download "+os.path.basename(train_filepath))
-    util.http_get('https://sbert.net/datasets/msmarco-qidpidtriples.rnd-shuf.train.tsv.gz', train_filepath)
-
-cnt = 0
-with gzip.open(train_filepath, 'rt') as fIn:
-    for line in tqdm.tqdm(fIn, unit_scale=True):
-        qid, pos_id, neg_id = line.strip().split()
-
-        if qid in dev_samples:
-            continue
-
-        query = queries[qid]
-        if (cnt % (pos_neg_ration+1)) == 0:
-            passage = corpus[pos_id]
-            label = 1
+        if data_args.train_file.endswith(".csv"):
+            # Loading a dataset from local csv files
+            datasets = load_dataset("csv", data_files=data_files)
         else:
-            passage = corpus[neg_id]
-            label = 0
+            # Loading a dataset from local json files
+            datasets = load_dataset("json", data_files=data_files)
+    # See more about loading any type of standard or custom dataset at
+    # https://huggingface.co/docs/datasets/loading_datasets.html.
 
-        train_samples.append(InputExample(texts=[query, passage], label=label))
-        cnt += 1
+    # Labels
+    if data_args.task_name is not None:
+        is_regression = data_args.task_name == "stsb"
+        if not is_regression:
+            label_list = datasets["train"].features["label"].names
+            num_labels = len(label_list)
+        else:
+            num_labels = 1
+    else:
+        # Trying to have good defaults here, don't hesitate to tweak to your needs.
+        is_regression = datasets["train"].features["label"].dtype in ["float32", "float64"]
+        if is_regression:
+            num_labels = 1
+        else:
+            # A useful fast method:
+            # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.unique
+            label_list = datasets["train"].unique("label")
+            label_list.sort()  # Let's sort it for determinism
+            num_labels = len(label_list)
 
-        if cnt >= max_train_samples:
-            break
+    # Load pretrained model and tokenizer
+    #
+    # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
+    # download model & vocab.
+    config = AutoConfig.from_pretrained(
+        model_args.config_name if model_args.config_name else model_args.model_name_or_path,
+        num_labels=num_labels,
+        finetuning_task=data_args.task_name,
+        cache_dir=model_args.cache_dir,
+        revision=model_args.model_revision,
+        use_auth_token=True if model_args.use_auth_token else None,
+    )
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
+        cache_dir=model_args.cache_dir,
+        use_fast=model_args.use_fast_tokenizer,
+        revision=model_args.model_revision,
+        use_auth_token=True if model_args.use_auth_token else None,
+    )
+    model = AutoModelForSequenceClassification.from_pretrained(
+        model_args.model_name_or_path,
+        from_tf=bool(".ckpt" in model_args.model_name_or_path),
+        config=config,
+        cache_dir=model_args.cache_dir,
+        revision=model_args.model_revision,
+        use_auth_token=True if model_args.use_auth_token else None,
+    )
 
-# We create a DataLoader to load our train samples
-train_dataloader = DataLoader(train_samples, shuffle=True, batch_size=train_batch_size)
+    # Preprocessing the datasets
+    if data_args.task_name is not None:
+        sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
+    else:
+        # Again, we try to have some nice defaults but don't hesitate to tweak to your use case.
+        non_label_column_names = [name for name in datasets["train"].column_names if name != "label"]
+        if "sentence1" in non_label_column_names and "sentence2" in non_label_column_names:
+            sentence1_key, sentence2_key = "sentence1", "sentence2"
+        else:
+            if len(non_label_column_names) >= 2:
+                sentence1_key, sentence2_key = non_label_column_names[:2]
+            else:
+                sentence1_key, sentence2_key = non_label_column_names[0], None
 
-# We add an evaluator, which evaluates the performance during training
-# It performs a classification task and measures scores like F1 (finding relevant passages) and Average Precision
-evaluator = CERerankingEvaluator(dev_samples, name='train-eval')
+    # Padding strategy
+    if data_args.pad_to_max_length:
+        padding = "max_length"
+    else:
+        # We will pad later, dynamically at batch creation, to the max sequence length in each batch
+        padding = False
 
-# Configure the training
-warmup_steps = 5000
-logging.info("Warmup-steps: {}".format(warmup_steps))
+    # Some models have set the order of the labels to use, so let's make sure we do use it.
+    label_to_id = None
+    if (
+        model.config.label2id != PretrainedConfig(num_labels=num_labels).label2id
+        and data_args.task_name is not None
+        and not is_regression
+    ):
+        # Some have all caps in their config, some don't.
+        label_name_to_id = {k.lower(): v for k, v in model.config.label2id.items()}
+        if list(sorted(label_name_to_id.keys())) == list(sorted(label_list)):
+            label_to_id = {i: int(label_name_to_id[label_list[i]]) for i in range(num_labels)}
+        else:
+            logger.warning(
+                "Your model seems to have been trained with labels, but they don't match the dataset: ",
+                f"model labels: {list(sorted(label_name_to_id.keys()))}, dataset labels: {list(sorted(label_list))}."
+                "\nIgnoring the model labels as a result.",
+            )
+    elif data_args.task_name is None and not is_regression:
+        label_to_id = {v: i for i, v in enumerate(label_list)}
 
+    if data_args.max_seq_length > tokenizer.model_max_length:
+        logger.warning(
+            f"The max_seq_length passed ({data_args.max_seq_length}) is larger than the maximum length for the"
+            f"model ({tokenizer.model_max_length}). Using max_seq_length={tokenizer.model_max_length}."
+        )
+    max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
 
-# Train the model
-model.fit(train_dataloader=train_dataloader,
-          evaluator=evaluator,
-          epochs=num_epochs,
-          evaluation_steps=10000,
-          warmup_steps=warmup_steps,
-          output_path=model_save_path,
-          use_amp=True)
+    def preprocess_function(examples):
+        # Tokenize the texts
+        args = (
+            (examples[sentence1_key],) if sentence2_key is None else (examples[sentence1_key], examples[sentence2_key])
+        )
+        result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
 
-#Save latest model
-model.save(model_save_path+'-latest')
+        # Map labels to IDs (not necessary for GLUE tasks)
+        if label_to_id is not None and "label" in examples:
+            result["label"] = [(label_to_id[l] if l != -1 else -1) for l in examples["label"]]
+        return result
+
+    datasets = datasets.map(preprocess_function, batched=True, load_from_cache_file=not data_args.overwrite_cache)
+    if training_args.do_train:
+        if "train" not in datasets:
+            raise ValueError("--do_train requires a train dataset")
+        train_dataset = datasets["train"]
+        if data_args.max_train_samples is not None:
+            train_dataset = train_dataset.select(range(data_args.max_train_samples))
+
+    if training_args.do_eval:
+        if "validation" not in datasets and "validation_matched" not in datasets:
+            raise ValueError("--do_eval requires a validation dataset")
+        eval_dataset = datasets["validation_matched" if data_args.task_name == "mnli" else "validation"]
+        if data_args.max_val_samples is not None:
+            eval_dataset = eval_dataset.select(range(data_args.max_val_samples))
+
+    if training_args.do_predict or data_args.task_name is not None or data_args.test_file is not None:
+        if "test" not in datasets and "test_matched" not in datasets:
+            raise ValueError("--do_predict requires a test dataset")
+        test_dataset = datasets["test_matched" if data_args.task_name == "mnli" else "test"]
+        if data_args.max_test_samples is not None:
+            test_dataset = test_dataset.select(range(data_args.max_test_samples))
+
+    # Log a few random samples from the training set:
+    if training_args.do_train:
+        for index in random.sample(range(len(train_dataset)), 3):
+            logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+
+    # Get the metric function
+    if data_args.task_name is not None:
+        metric = load_metric("glue", data_args.task_name)
+    # TODO: When datasets metrics include regular accuracy, make an else here and remove special branch from
+    # compute_metrics
+
+    # You can define your custom compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
+    # predictions and label_ids field) and has to return a dictionary string to float.
+    def compute_metrics(p: EvalPrediction):
+        preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
+        preds = np.squeeze(preds) if is_regression else np.argmax(preds, axis=1)
+        if data_args.task_name is not None:
+            result = metric.compute(predictions=preds, references=p.label_ids)
+            if len(result) > 1:
+                result["combined_score"] = np.mean(list(result.values())).item()
+            return result
+        elif is_regression:
+            return {"mse": ((preds - p.label_ids) ** 2).mean().item()}
+        else:
+            return {"accuracy": (preds == p.label_ids).astype(np.float32).mean().item()}
+
+    # Data collator will default to DataCollatorWithPadding, so we change it if we already did the padding.
+    if data_args.pad_to_max_length:
+        data_collator = default_data_collator
+    elif training_args.fp16:
+        data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
+    else:
+        data_collator = None
+
+    # Initialize our Trainer
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset if training_args.do_train else None,
+        eval_dataset=eval_dataset if training_args.do_eval else None,
+        compute_metrics=compute_metrics,
+        tokenizer=tokenizer,
+        data_collator=data_collator,
+    )
+
+    # Training
+    if training_args.do_train:
+        checkpoint = None
+        if last_checkpoint is not None:
+            checkpoint = last_checkpoint
+        elif os.path.isdir(model_args.model_name_or_path):
+            # Check the config from that potential checkpoint has the right number of labels before using it as a
+            # checkpoint.
+            if AutoConfig.from_pretrained(model_args.model_name_or_path).num_labels == num_labels:
+                checkpoint = model_args.model_name_or_path
+
+        train_result = trainer.train(resume_from_checkpoint=checkpoint)
+        metrics = train_result.metrics
+        max_train_samples = (
+            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+        )
+        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
+
+        trainer.save_model()  # Saves the tokenizer too for easy upload
+
+        trainer.log_metrics("train", metrics)
+        trainer.save_metrics("train", metrics)
+        trainer.save_state()
+
+    # Evaluation
+    if training_args.do_eval:
+        logger.info("*** Evaluate ***")
+        tasks = [data_args.task_name]
+        eval_datasets = [eval_dataset]
+        if data_args.task_name == "mnli":
+            tasks.append("mnli-mm")
+            eval_datasets.append(datasets["validation_mismatched"])
+
+        for eval_dataset, task in zip(eval_datasets, tasks):
+            metrics = trainer.evaluate(eval_dataset=eval_dataset)
+
+            max_val_samples = data_args.max_val_samples if data_args.max_val_samples is not None else len(eval_dataset)
+            metrics["eval_samples"] = min(max_val_samples, len(eval_dataset))
+
+            trainer.log_metrics("eval", metrics)
+            trainer.save_metrics("eval", metrics)
+
+    if training_args.do_predict:
+        logger.info("*** Predict ***")
+        #ranking stuff
+
+if __name__ == "__main__":
+    main()
