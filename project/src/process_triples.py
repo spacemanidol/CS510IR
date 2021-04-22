@@ -9,43 +9,34 @@ import transformers
 import pickle
 from transformers import AutoTokenizer
 from sklearn.model_selection import train_test_split
-
+import json
 def main(args):
     print("loading tokenizer")
-    tokenizer = AutoTokenizer.from_pretrained(
-            args.model_name_or_path,
-            cache_dir=args.cache_dir,
-            use_fast=True,
-    )
     texts, labels = [], []
     print("Loading Data")
     with open(args.input_filename,'r') as f:
         for l in f:
             l = l.strip().split('\t')
             if len(l) == 3:
-                texts.append("{}[SEP]{}".format(l[0],l[1]))
+                texts.append((l[0],l[1]))
                 labels.append(1)
-                texts.append("{}[SEP]{}".format(l[0],l[2]))
+                texts.append((l[0],l[2]))
                 labels.append(0)
     print("Dataset Contains {} Values. Resizing to {}".format(len(texts), args.dataset_size))
-    texts = texts[:args.dataset_size]
-    labels = labels = labels[:args.dataset_size]
+    if args.dataset_size != None:
+        texts = texts[:args.dataset_size]
+        labels =  labels[:args.dataset_size]
     print("Spliting data into train test split")
     train_texts, val_texts, train_labels, val_labels = train_test_split(texts, labels, test_size=args.validation_size/len(texts))
-    print("Done Splitting data. Train has {} examples and test has {}".format(len(train_texts), len(val_texts)))
-    del texts, labels
-    print("Tokenizing train examples")
-    train_encodings = tokenizer(train_texts, truncation=True, padding=True)
-    print("Done Tokenizing train examples")
-    print("Saving Train Examples")
-    data = {"encodings":train_encodings,"labels": train_labels}
-    del train_texts, train_labels
-    pickle.dump(data, open(args.model_name_or_path + "-train-" + args.output_filename,'wb'))
-    print("Tokenizing test examples")
-    validation_encodings = tokenizer(val_texts, truncation=True, padding=True)
-    print("Done Tokenizing test")
-    del val_texts, val_labels
-
+    with open('train.json', 'w') as w:
+        for idx in range(len(train_texts)):
+            j = {"query": train_texts[idx][0], "passage":train_texts[idx][1], "label": train_labels[idx]}
+            w.write("{}\n".format(json.dumps(j)))
+    with open('validation.json', 'w') as w:
+        for idx in range(len(val_texts)):
+            j = {"query": val_texts[idx][0], "passage":val_texts[idx][1], "label": val_labels[idx]}
+            w.write("{}\n".format(json.dumps(j)))
+    
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Turn MSMARCO Data into HF usable datasets')
     parser.add_argument('--input_filename', type=str, default='data/triples.train.small.tsv', help='Location of triples')
