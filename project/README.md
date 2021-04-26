@@ -44,3 +44,4 @@ In the last few decades search engines like Google, Bing, Baidu, and Yandex have
 \end{document}
 \endinput
 
+python -m pyserini.search --topics msmarco-passage-dev-subset    --index indexes/lucene-index-msmarco-passage  --output run.msmarco-passage.bm25tuned.txt  --bm25 --msmarco --hits 1000 --k1 0.82 --b 0.68

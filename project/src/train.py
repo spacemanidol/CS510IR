@@ -19,7 +19,8 @@ from torch.nn import Linear, Module, Parameter
 from torch.optim import Adam
 from torch.utils.data import ConcatDataset, DataLoader
 from tqdm.auto import tqdm
-#import wandb
+import math
+import wandb
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +56,7 @@ from sparseml.pytorch.optim.manager import ScheduledModifierManager
 from sparseml.pytorch.optim.optimizer import ScheduledOptimizer
 from sparseml.pytorch.utils import ModuleExporter
 
-#from distill_trainer_qa import DistillRankingTrainer
+from distill_trainer_qa import DistillRankingTrainer
 
 @dataclass
 class DataTrainingArguments:
@@ -89,7 +90,7 @@ class DataTrainingArguments:
         default='data/validation.json', metadata={"help": "A csv or a json file containing the validation data."}
     )
     nm_prune_config: Optional[str] = field(
-        default='recipes/noprune1epoch.yaml', metadata={"help": "The input file name for the Neural Magic pruning config"}
+        default='recipes/noprune2epoch.yaml', metadata={"help": "The input file name for the Neural Magic pruning config"}
     )
     do_onnx_export: bool = field(
         default=False, metadata={"help": "Export model to onnx"}
@@ -112,7 +113,7 @@ class ModelArguments:
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
     teacher_model_name_or_path: Optional[str] = field(
-        default="spacemanidol/neuralmagic-bert-squad-12layer-0sparse", metadata={"help": "Teacher model which needs to be a trained QA model"}
+        default="bert-base-uncased", metadata={"help": "Teacher model which needs to be a trained QA model"}
     )
     student_model_name_or_path: Optional[str] = field(
         default="bert-base-uncased", metadata={"help": "Student model"}
@@ -190,7 +191,7 @@ def drop_layers(model, layers_to_keep):
 
 
 def main():
-    #wandb.init(project='PruneMSMARCO', entity='spacemanidol')
+    wandb.init(project='PruneMSMARCO', entity='spacemanidol')
     parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
@@ -254,19 +255,13 @@ def main():
         cache_dir=model_args.cache_dir,
         use_fast=model_args.use_fast_tokenizer,
     )
-    model = AutoModelForSequenceClassification.from_pretrained(
-        model_args.model_name_or_path,
-        config=config,
-        cache_dir=model_args.cache_dir,
-    )
-    """
-    student_model = AutoModelForQuestionAnswering.from_pretrained(
+    student_model = AutoModelForSequenceClassification.from_pretrained(
         model_args.student_model_name_or_path,
         from_tf=bool(".ckpt" in model_args.student_model_name_or_path),
         config=config,
         cache_dir=model_args.cache_dir,
     )
-    teacher_model = AutoModelForQuestionAnswering.from_pretrained(
+    teacher_model = AutoModelForSequenceClassification.from_pretrained(
         model_args.teacher_model_name_or_path,
         from_tf=bool(".ckpt" in model_args.teacher_model_name_or_path),
         config=config,
@@ -282,7 +277,6 @@ def main():
     teacher_model_parameters = filter(lambda p: p.requires_grad, teacher_model.parameters())
     params = sum([np.prod(p.size()) for p in teacher_model_parameters])
     logger.info("Teacher Model has %s parameters", params)   
-    """
 
     # Padding strategy
     if data_args.pad_to_max_length:
@@ -321,23 +315,24 @@ def main():
         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
     else:
         data_collator = None
-    """
+
     optim = load_optimizer(student_model, TrainingArguments)
     steps_per_epoch = math.ceil(len(datasets["train"]) / (training_args.per_device_train_batch_size*training_args._n_gpu))
     manager = ScheduledModifierManager.from_yaml(data_args.nm_prune_config)
     optim = ScheduledOptimizer(optim, student_model, manager, steps_per_epoch=steps_per_epoch, loggers=None)
-    """
+    
     # Initialize our Trainer
     trainer = Trainer(
-        model=model,
+        model=student_model,
         args=training_args,
         train_dataset=datasets["train"],
         eval_dataset=datasets["validation"],
-        compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
         data_collator=data_collator,
+        compute_metrics=compute_metrics,
+        optimizers=(optim, None),
     )
-    trainer.train(model_path=model_args.model_name_or_path)
+    
+    trainer.train()
     trainer.save_model()
 
 if __name__ == "__main__":

@@ -1,4 +1,4 @@
-name: '510'
+name: 'pyserini'
 channels:
   - conda-forge/label/gcc7
   - defaults

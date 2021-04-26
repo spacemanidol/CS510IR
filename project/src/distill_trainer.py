@@ -8,9 +8,15 @@ from torch import Tensor
 from transformers import Trainer, is_datasets_available, is_torch_tpu_available
 from transformers.trainer_utils import PredictionOutput
 
+if is_datasets_available():
+    import datasets
 
-class DistillRankingTrainerr(Trainer):
-    def __init__(self, *args, eval_examples=None, post_process_function=None, teacher=None, loss=None, batch_size=8, max_sequence_length=384,distill_hardness =0.5, temperature=2.0, criterion=nn.CrossEntropyLoss() **kwargs):
+if is_torch_tpu_available():
+    import torch_xla.core.xla_model as xm
+    import torch_xla.debug.metrics as met
+
+class DistillRankingTrainer(Trainer):
+    def __init__(self, *args, eval_examples=None, post_process_function=None, teacher=None, loss=None, batch_size=8, max_sequence_length=384,distill_hardness =0.5, temperature=2.0, criterion=nn.CrossEntropyLoss(), **kwargs):
         super().__init__(*args, **kwargs)
         self.eval_examples = eval_examples
         self.post_process_function = post_process_function
@@ -64,25 +70,6 @@ class DistillRankingTrainerr(Trainer):
         loss = ((1-self.distill_hardness) * label_loss) + (self.distill_hardness * teacher_loss)
         return loss
 
-
-from transformers import Trainer, is_datasets_available, is_torch_tpu_available
-from transformers.trainer_utils import PredictionOutput
-
-
-if is_datasets_available():
-    import datasets
-
-if is_torch_tpu_available():
-    import torch_xla.core.xla_model as xm
-    import torch_xla.debug.metrics as met
-
-class QuestionAnsweringTrainer(Trainer):
-    def __init__(self, *args, eval_examples=None, post_process_function=None, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.eval_examples = eval_examples
-        self.post_process_function = post_process_function
-
-    
     def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None):
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
@@ -154,3 +141,5 @@ class QuestionAnsweringTrainer(Trainer):
             label_ids=eval_preds.label_ids,
             metrics=metrics,
         )
+    
+    

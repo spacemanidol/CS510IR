@@ -1,49 +1,87 @@
-import logging
 import argparse
 import os
+import json
 import random
 import sys
-import numpy as np
-import torch
-import transformers
-import pickle
-from transformers import AutoTokenizer
-from sklearn.model_selection import train_test_split
-import json
-def main(args):
-    print("loading tokenizer")
-    texts, labels = [], []
-    print("Loading Data")
-    with open(args.input_filename,'r') as f:
+
+def load_top1000(filename):
+    qid2ranking = {}
+    with open(filename,'r') as f:
         for l in f:
             l = l.strip().split('\t')
-            if len(l) == 3:
-                texts.append((l[0],l[1]))
-                labels.append(1)
-                texts.append((l[0],l[2]))
-                labels.append(0)
-    print("Dataset Contains {} Values. Resizing to {}".format(len(texts), args.dataset_size))
-    if args.dataset_size != None:
-        texts = texts[:args.dataset_size]
-        labels =  labels[:args.dataset_size]
-    print("Spliting data into train test split")
-    train_texts, val_texts, train_labels, val_labels = train_test_split(texts, labels, test_size=args.validation_size/len(texts))
-    with open('train.json', 'w') as w:
-        for idx in range(len(train_texts)):
-            j = {"query": train_texts[idx][0], "passage":train_texts[idx][1], "label": train_labels[idx]}
-            w.write("{}\n".format(json.dumps(j)))
-    with open('validation.json', 'w') as w:
-        for idx in range(len(val_texts)):
-            j = {"query": val_texts[idx][0], "passage":val_texts[idx][1], "label": val_labels[idx]}
-            w.write("{}\n".format(json.dumps(j)))
+            qid = int(l[0])
+            did = (l[1])
+            if qid not in qid2ranking:
+                qid2ranking[qid] = {}
+            rank = len(qid2ranking[qid]) + 1
+            qid2ranking[qid][rank] = did
+    return qid2ranking
+
+def load_reference_from_stream(f):
+    """Load Reference reference relevant passages
+    Args:f (stream): stream to load.
+    Returns:qids_to_relevant_passageids (dict): dictionary mapping from query_id (int) to relevant passages (list of ints). 
+    """
+    qids_to_relevant_passageids = {}
+    for l in f:
+        try:
+            l = l.strip().split('\t')
+            qid = int(l[0])
+            if qid in qids_to_relevant_passageids:
+                pass
+            else:
+                qids_to_relevant_passageids[qid] = []
+            qids_to_relevant_passageids[qid].append(int(l[2]))
+        except:
+            raise IOError('\"%s\" is not valid format' % l)
+    return qids_to_relevant_passageids
+
+def load_reference(path_to_reference):
+    """Load Reference reference relevant passages
+    Args:path_to_reference (str): path to a file to load.
+    Returns:qids_to_relevant_passageids (dict): dictionary mapping from query_id (int) to relevant passages (list of ints). 
+    """
+    with open(path_to_reference,'r') as f:
+        qids_to_relevant_passageids = load_reference_from_stream(f)
+    return qids_to_relevant_passageids
+
+def load_qid2query(filename):
+    qid2query = {}
+    with open(filename,'r') as f:
+        for l in f:
+            l = l.strip().split('\t')
+            qid2query[int(l[0])] = l[1]
+    return qid2query
+
+def main(args):
+    qid2ranking = load_top1000(args.top1000_filename)
+    qid2query = load_qid2query(args.query_filename)
+    collection = load_qid2query(args.collection_filename)
+    qrels = load_reference(args.qrel_filename)
+    qids = list(qid2ranking.keys())
+    random.shuffle(qids)
+    qids = qids[:args.validation_size]
+    with open(args.output_filename,'w') as w:
+        for qid in qids:
+            if qid in qrels:
+                j = {"query": qid, "passage":collection[qrels[qid][0]], "label": 1}
+                w.write("{}\n".format(json.dumps(j)))
+                for i in range(1,args.negative_samples+1):
+                    if i not in qid2ranking:
+                        break
+                    if qid2ranking[qid][i] != qrels[qid]:
+                        j = {"query": qid, "passage":collection[int(qid2ranking[qid][i])], "label": 0}
+                        w.write("{}\n".format(json.dumps(j)))
+    
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Turn MSMARCO Data into HF usable datasets')
-    parser.add_argument('--input_filename', type=str, default='data/triples.train.small.tsv', help='Location of triples')
-    parser.add_argument('--model_name_or_path', type=str, default='bert-base-uncased', help='Tokenization model')
-    parser.add_argument('--cache_dir', type=str, default='cache', help='cache directory')
-    parser.add_argument('--dataset_size', type=int, default=None, help='Size of Training data')
-    parser.add_argument('--validation_size', type=int, default=10000, help='Size of Validation set')
-    parser.add_argument('--output_filename', type=str, default='msmarco_processed.pkl', help='name of processed pickle file for msmarco ourput')
+    parser.add_argument('--top1000_filename', type=str, default='data/top1000.dev', help='Location of top 1000')
+    parser.add_argument('--collection_filename', type=str, default='data/collection.tsv', help='Collection datafile')
+    parser.add_argument('--query_filename', type=str, default='data/queries.tsv', help='query to qid file')
+    parser.add_argument('--qrel_filename', type=str, default='data/qrels.dev.tsv', help='qrels file')
+    parser.add_argument('--validation_size', type=int, default=300, help='Size of Validation set')
+    parser.add_argument('--negative_samples', type=int, default=100, help='negative samples per query')
+    parser.add_argument('--output_filename', type=str, default='evaluation.json', help='name of processed pickle file for msmarco ourput')
     args = parser.parse_args()
     main(args)
