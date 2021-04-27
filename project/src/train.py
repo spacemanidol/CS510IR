@@ -102,7 +102,7 @@ class DataTrainingArguments:
         default='recipes/base.yaml', metadata={"help": "The input file name for the Neural Magic pruning config"}
     )
     max_train_samples: Optional[int] = field(
-        default=8000000,
+        default=8e7,
         metadata={
             "help": "Since the MSMARCO Dataset is 79551622 items we subsample to ~10%"
         },
@@ -353,20 +353,8 @@ def main():
     manager = ScheduledModifierManager.from_yaml(data_args.nm_prune_config)
     optim = ScheduledOptimizer(optim, student_model, manager, steps_per_epoch=steps_per_epoch, loggers=None)
     training_args.num_train_epochs = float(manager.modifiers[0].end_epoch)
-    
-    # Initialize our Trainer
-    trainer = Trainer(
-        model=student_model,
-        args=training_args,
-        train_dataset=datasets["train"],
-        eval_dataset=datasets["validation"],
-        data_collator=data_collator,
-        compute_metrics=compute_metrics,
-        optimizers=(optim, None),
-    )
 
-    if training_args.do_train:
-        trainer = DistillRankingTrainer(
+    trainer = DistillRankingTrainer(
         model=student_model,
         args=training_args,
         train_dataset=datasets["train"],
@@ -377,25 +365,9 @@ def main():
         teacher=teacher_model,
         distill_hardness = model_args.distill_hardness,
         temperature = model_args.temperature,
-        )
-        trainer.train()
-        trainer.save_model()
-
-    if training_args.do_rerank:
-        queries = load_qid2query(data_args.queries_file)
-        collection = load_qid2query(data_args.collection_file)
-        ranking = load_ranking(data_args.rerank_file, collection, queries)
-        def preprocess_ranking_function(examples):
-        # Tokenize the texts
-        args = (
-            (examples["query"], examples["passage"])
-        )
-        result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
-        result["label"] = examples["label"]
-        return result
-    if data_args.max_train_samples is not None:
-            train_dataset = train_dataset.select(range(data_args.max_train_samples))
-    datasets = datasets.map(preprocess_function, batched=True, load_from_cache_file=not data_args.overwrite_cache, num_proc=data_args.preprocessing_num_workers,)
+    )
+    trainer.train()
+    trainer.save_model()
 
 if __name__ == "__main__":
     main()
