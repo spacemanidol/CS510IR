@@ -83,6 +83,15 @@ class DataTrainingArguments:
             "If False, will pad the samples dynamically when batching to the maximum length in the batch."
         },
     )
+    queries_file = Optional[str] = field(
+        default='data/queries.tsv', metadata={"help": "A file of qid to query mapping"}
+    )
+    collection_file = Optional[str] = field(
+        default='data/collection.tsv', metadata={"help": "A file with the documentid to document mapping"}
+    )
+    rerank_file = Optional[str] = field(
+        default='data/bm25devtop1000.txt', metadata={"help": "Candidate File for Reranking"}
+    )
     train_file: Optional[str] = field(
         default='data/train.json', metadata={"help": "A csv or a json file containing the training data."}
     )
@@ -90,7 +99,13 @@ class DataTrainingArguments:
         default='data/validation.json', metadata={"help": "A csv or a json file containing the validation data."}
     )
     nm_prune_config: Optional[str] = field(
-        default='recipes/noprune2epoch.yaml', metadata={"help": "The input file name for the Neural Magic pruning config"}
+        default='recipes/base.yaml', metadata={"help": "The input file name for the Neural Magic pruning config"}
+    )
+    max_train_samples: Optional[int] = field(
+        default=8000000,
+        metadata={
+            "help": "Since the MSMARCO Dataset is 79551622 items we subsample to ~10%"
+        },
     )
     do_onnx_export: bool = field(
         default=False, metadata={"help": "Export model to onnx"}
@@ -122,11 +137,7 @@ class ModelArguments:
         default=2.0, metadata={"help": "Temperature applied to teacher softmax for distillation."}
     )
     distill_hardness: Optional[float] = field(
-        default=0.5, metadata={"help": "Proportion of loss coming from teacher model."}
-    )
-    model_name_or_path: str = field(
-        default='bert-base-uncased',
-        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
+        default=1.0, metadata={"help": "Proportion of loss coming from teacher model."}
     )
     config_name: Optional[str] = field(
         default='bert-base-uncased', metadata={"help": "Pretrained config name or path if not the same as model_name"}
@@ -142,6 +153,26 @@ class ModelArguments:
         default=True,
         metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
     )
+
+def load_ranking(filename, collection, queries):
+    qid2documents = {}
+    with open(filename, 'r') as f:
+        for l in f:
+            l = l.strip().split('\t')
+            query = queries[l[0]]
+            document = collection[l[1]]
+            if query not in qid2documents:
+                qid2documents[query] = []
+            qid2documents[query].append(document)
+    return qid2documents
+
+def load_qid2query(filename):
+    qid2query = {}
+    with open(filename,'r') as f:
+        for l in f:
+            l = l.strip().split('\t')
+            qid2query[int(l[0])] = l[1]
+    return qid2query
 
 def load_optimizer(model, args):
     no_decay = ["bias", "LayerNorm.weight"]
@@ -299,7 +330,8 @@ def main():
         result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
         result["label"] = examples["label"]
         return result
-
+    if data_args.max_train_samples is not None:
+            train_dataset = train_dataset.select(range(data_args.max_train_samples))
     datasets = datasets.map(preprocess_function, batched=True, load_from_cache_file=not data_args.overwrite_cache, num_proc=data_args.preprocessing_num_workers,)
     traindataset = datasets["train"]
     for index in random.sample(range(len(traindataset)), 3):
@@ -320,6 +352,7 @@ def main():
     steps_per_epoch = math.ceil(len(datasets["train"]) / (training_args.per_device_train_batch_size*training_args._n_gpu))
     manager = ScheduledModifierManager.from_yaml(data_args.nm_prune_config)
     optim = ScheduledOptimizer(optim, student_model, manager, steps_per_epoch=steps_per_epoch, loggers=None)
+    training_args.num_train_epochs = float(manager.modifiers[0].end_epoch)
     
     # Initialize our Trainer
     trainer = Trainer(
@@ -331,9 +364,38 @@ def main():
         compute_metrics=compute_metrics,
         optimizers=(optim, None),
     )
-    
-    trainer.train()
-    trainer.save_model()
+
+    if training_args.do_train:
+        trainer = DistillRankingTrainer(
+        model=student_model,
+        args=training_args,
+        train_dataset=datasets["train"],
+        eval_dataset=datasets["validation"],
+        data_collator=data_collator,
+        compute_metrics=compute_metrics,
+        optimizers=(optim, None),
+        teacher=teacher_model,
+        distill_hardness = model_args.distill_hardness,
+        temperature = model_args.temperature,
+        )
+        trainer.train()
+        trainer.save_model()
+
+    if training_args.do_rerank:
+        queries = load_qid2query(data_args.queries_file)
+        collection = load_qid2query(data_args.collection_file)
+        ranking = load_ranking(data_args.rerank_file, collection, queries)
+        def preprocess_ranking_function(examples):
+        # Tokenize the texts
+        args = (
+            (examples["query"], examples["passage"])
+        )
+        result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
+        result["label"] = examples["label"]
+        return result
+    if data_args.max_train_samples is not None:
+            train_dataset = train_dataset.select(range(data_args.max_train_samples))
+    datasets = datasets.map(preprocess_function, batched=True, load_from_cache_file=not data_args.overwrite_cache, num_proc=data_args.preprocessing_num_workers,)
 
 if __name__ == "__main__":
     main()
