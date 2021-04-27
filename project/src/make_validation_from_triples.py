@@ -64,13 +64,13 @@ def main(args):
     with open(args.output_filename,'w') as w:
         for qid in qids:
             if qid in qrels:
-                j = {"query": qid, "passage":collection[qrels[qid][0]], "label": 1}
+                j = {"query": qid2query[qid], "passage":collection[qrels[qid][0]], "label": 1}
                 w.write("{}\n".format(json.dumps(j)))
                 for i in range(1,args.negative_samples+1):
                     if i not in qid2ranking:
                         break
                     if qid2ranking[qid][i] != qrels[qid]:
-                        j = {"query": qid, "passage":collection[int(qid2ranking[qid][i])], "label": 0}
+                        j = {"query": qid2query[qid], "passage":collection[int(qid2ranking[qid][i])], "label": 0}
                         w.write("{}\n".format(json.dumps(j)))
     
     

@@ -56,7 +56,7 @@ from sparseml.pytorch.optim.manager import ScheduledModifierManager
 from sparseml.pytorch.optim.optimizer import ScheduledOptimizer
 from sparseml.pytorch.utils import ModuleExporter
 
-from distill_trainer_qa import DistillRankingTrainer
+from distill_trainer import DistillRankingTrainer
 
 @dataclass
 class DataTrainingArguments:
@@ -83,20 +83,11 @@ class DataTrainingArguments:
             "If False, will pad the samples dynamically when batching to the maximum length in the batch."
         },
     )
-    queries_file = Optional[str] = field(
-        default='data/queries.tsv', metadata={"help": "A file of qid to query mapping"}
-    )
-    collection_file = Optional[str] = field(
-        default='data/collection.tsv', metadata={"help": "A file with the documentid to document mapping"}
-    )
-    rerank_file = Optional[str] = field(
-        default='data/bm25devtop1000.txt', metadata={"help": "Candidate File for Reranking"}
-    )
     train_file: Optional[str] = field(
         default='data/train.json', metadata={"help": "A csv or a json file containing the training data."}
     )
     validation_file: Optional[str] = field(
-        default='data/validation.json', metadata={"help": "A csv or a json file containing the validation data."}
+        default='data/evaluation.json', metadata={"help": "A json file containing the validation data."}
     )
     nm_prune_config: Optional[str] = field(
         default='recipes/base.yaml', metadata={"help": "The input file name for the Neural Magic pruning config"}
@@ -128,7 +119,7 @@ class ModelArguments:
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune from.
     """
     teacher_model_name_or_path: Optional[str] = field(
-        default="bert-base-uncased", metadata={"help": "Teacher model which needs to be a trained QA model"}
+        default=None, metadata={"help": "Teacher model which needs to be a trained sequence classification model"}
     )
     student_model_name_or_path: Optional[str] = field(
         default="bert-base-uncased", metadata={"help": "Student model"}
@@ -292,15 +283,16 @@ def main():
         config=config,
         cache_dir=model_args.cache_dir,
     )
-    teacher_model = AutoModelForSequenceClassification.from_pretrained(
-        model_args.teacher_model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.teacher_model_name_or_path),
-        config=config,
-        cache_dir=model_args.cache_dir,
-    )
     if data_args.layers_to_keep < len(student_model.bert.encoder.layer):
         logger.info("Keeping %s model layers", data_args.layers_to_keep)
         student_model = drop_layers(student_model, data_args.layers_to_keep)
+    if model_args.teacher_model_name_or_path != None:
+        teacher_model = AutoModelForSequenceClassification.from_pretrained(
+            model_args.teacher_model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.teacher_model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+        )
 
     student_model_parameters = filter(lambda p: p.requires_grad, student_model.parameters())
     params = sum([np.prod(p.size()) for p in student_model_parameters])
