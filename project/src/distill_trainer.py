@@ -36,39 +36,33 @@ class DistillRankingTrainer(Trainer):
         """
         input_device = inputs["input_ids"].device
         outputs = model(**inputs)
-        start_logits_student = outputs["start_logits"]
-        end_logits_student = outputs["end_logits"]
-        start_logits_label = inputs["start_positions"]
-        end_logits_label = inputs["start_positions"]
-        if teacher is not None:
+        loss = torch.mean(outputs['loss'])
+        logit_neg = F.softmax(outputs['logits'][:, :1]/ self.temperature, dim=-1)
+        logit_pos = F.softmax(outputs['logits'][:, 1:2]/ self.temperature, dim=-1)
+        if self.teacher is not None:
             self.teacher = self.teacher.to(input_device)
+            student_logit_neg = F.softmax(outputs['logits'][:, :1]/ self.temperature, dim=-1)
+            student_logit_pos = F.softmax(outputs['logits'][:, 1:2]/ self.temperature, dim=-1)
             with torch.no_grad():
-                teacher_output = self.teacher(
-                                input_ids=inputs["input_ids"],
-                                token_type_ids=inputs["token_type_ids"],
-                                attention_mask=inputs["attention_mask"],
-                            )
-            start_logits_teacher = teacher_output["start_logits"]
-            end_logits_teacher = teacher_output["end_logits"]
-            loss_start = (
+                teacher_output = self.teacher(**inputs)
+                teacher_logit_neg = F.softmax(teacher_outputs['logits'][:, :1]/ self.temperature, dim=-1)
+                teacher_logit_pos = F.softmax(teacher_outputs['logits'][:, 1:2]/ self.temperature, dim=-1)
+            loss_pos = (
                 F.kl_div(
-                    input=F.log_softmax(start_logits_student / self.temperature, dim=-1),
-                    target=F.softmax(start_logits_teacher / self.temperature, dim=-1),
+                    input=F.log_softmax(student_logit_pos  / self.temperature, dim=-1),
+                    target=F.softmax(teacher_logit_pos / self.temperature, dim=-1),
                     reduction="batchmean",
                 )
                 * (self.temperature ** 2)
             )
-            loss_end = (
+            loss_neg = (
                 F.kl_div(
-                    input=F.log_softmax(end_logits_student / self.temperature, dim=-1),
-                    target=F.softmax(end_logits_teacher / self.temperature, dim=-1),
+                    input=F.log_softmax(student_logit_neg / self.temperature, dim=-1),
+                    target=F.softmax(teacher_logit_neg / self.temperature, dim=-1),
                     reduction="batchmean",
                 )
                 * (self.temperature ** 2)
             )
-            teacher_loss = (loss_start + loss_end) / 2.0
-        loss_start = self.criterion(start_logits_student, start_logits_label)
-        loss_end = self.criterion(end_logits_student, end_logits_label)
-        label_loss = (loss_start + loss_end) / 2.0
-        loss = ((1-self.distill_hardness) * label_loss) + (self.distill_hardness * teacher_loss)
+            teacher_loss = (loss_pos + loss_neg) / 2.0
+            loss = ((1-self.distill_hardness) * loss) + (self.distill_hardness * teacher_loss)
         return loss    

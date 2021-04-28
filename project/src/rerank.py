@@ -42,6 +42,7 @@ def main(args):
         result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
         return result
     dataset = dataset.map(preprocess_function, batched=True)
+    datasets["predict"] = datasets["predict"].select(range(args.samples*1000))
     training_args=TrainingArguments('.')
     training_args.per_device_eval_batch_size = args.batch_size
     trainer = Trainer(model=model,args=training_args)
@@ -63,11 +64,12 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Rerank Top1000')
+    parser.add_argument('--samples', type=int, default=200, help='Number of queries to evaluate')
     parser.add_argument('--model_name_or_path', type=str, default='cache/base', help="reranking model")
     parser.add_argument('--batch_size', type=int, default=512, help='eval batch size per device')
     parser.add_argument('--cache_dir', type=str, default='cache', help='cache file')
     parser.add_argument('--max_seq_length', type=int, default=256, help="padding size")
-    parser.add_argument('--top_n', type=int, default=10, help="reranked results per query")
+    parser.add_argument('--top_n', type=int, default=1000, help="reranked results per query")
     parser.add_argument('--candidate_filename', type=str, default='candidate.tsv', help="reranked")
     parser.add_argument('--dataset_name', type=str, default='data/devtop1000.json', help='json processed results')
     parser.add_argument('--tokenizer_name_or_path', type=str, default='bert-base-uncased', help='tokenizer')

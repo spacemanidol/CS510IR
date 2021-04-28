@@ -93,7 +93,7 @@ class DataTrainingArguments:
         default='recipes/base.yaml', metadata={"help": "The input file name for the Neural Magic pruning config"}
     )
     max_train_samples: Optional[int] = field(
-        default=8e7,
+        default=8000000,
         metadata={
             "help": "Since the MSMARCO Dataset is 79551622 items we subsample to ~10%"
         },
@@ -293,13 +293,15 @@ def main():
             config=config,
             cache_dir=model_args.cache_dir,
         )
+        teacher_model_parameters = filter(lambda p: p.requires_grad, teacher_model.parameters())
+        params = sum([np.prod(p.size()) for p in teacher_model_parameters])
+        logger.info("Teacher Model has %s parameters", params)  
+    else:
+        teacher_model = None
 
     student_model_parameters = filter(lambda p: p.requires_grad, student_model.parameters())
     params = sum([np.prod(p.size()) for p in student_model_parameters])
-    logger.info("Student Model has %s parameters", params) 
-    teacher_model_parameters = filter(lambda p: p.requires_grad, teacher_model.parameters())
-    params = sum([np.prod(p.size()) for p in teacher_model_parameters])
-    logger.info("Teacher Model has %s parameters", params)   
+    logger.info("Student Model has %s parameters", params)  
 
     # Padding strategy
     if data_args.pad_to_max_length:
@@ -322,9 +324,9 @@ def main():
         result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
         result["label"] = examples["label"]
         return result
+    datasets = datasets.map(preprocess_function, batched=True, load_from_cache_file=True)
     if data_args.max_train_samples is not None:
-            train_dataset = train_dataset.select(range(data_args.max_train_samples))
-    datasets = datasets.map(preprocess_function, batched=True, load_from_cache_file=not data_args.overwrite_cache, num_proc=data_args.preprocessing_num_workers,)
+        datasets["train"] = datasets["train"].select(range(data_args.max_train_samples))
     traindataset = datasets["train"]
     for index in random.sample(range(len(traindataset)), 3):
         logger.info(f"Sample {index} of the training set: {traindataset[index]}.")
