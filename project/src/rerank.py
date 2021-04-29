@@ -41,8 +41,8 @@ def main(args):
         )
         result = tokenizer(*args, padding=padding, max_length=max_seq_length, truncation=True)
         return result
-    dataset = dataset.map(preprocess_function, batched=True)
-    datasets["predict"] = datasets["predict"].select(range(args.samples*1000))
+    dataset = dataset.map(preprocess_function, batched=True, load_from_cache_file=True, num_proc=8)
+    #dataset["predict"] = dataset["predict"].select(range(args.samples*1000))
     training_args=TrainingArguments('.')
     training_args.per_device_eval_batch_size = args.batch_size
     trainer = Trainer(model=model,args=training_args)
@@ -71,7 +71,7 @@ if __name__ == '__main__':
     parser.add_argument('--max_seq_length', type=int, default=256, help="padding size")
     parser.add_argument('--top_n', type=int, default=1000, help="reranked results per query")
     parser.add_argument('--candidate_filename', type=str, default='candidate.tsv', help="reranked")
-    parser.add_argument('--dataset_name', type=str, default='data/devtop1000.json', help='json processed results')
+    parser.add_argument('--dataset_name', type=str, default='data/devtop1000short.json', help='json processed results')
     parser.add_argument('--tokenizer_name_or_path', type=str, default='bert-base-uncased', help='tokenizer')
     args = parser.parse_args()
     main(args)
