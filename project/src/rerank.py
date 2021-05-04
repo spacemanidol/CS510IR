@@ -59,7 +59,7 @@ def main(args):
         for query in qid2ranking.keys():
             results = sorted(qid2ranking[query].items(), key = lambda kv: kv[1], reverse=True)[:args.top_n]
             for i in range(len(results)):
-                w.write("{}\t{}\t{}\n".format(query, results[i][0], i))
+                w.write("{}\t{}\t{}\t{}\n".format(query, results[i][0], i, results[i][1]))
 
 
 if __name__ == '__main__':

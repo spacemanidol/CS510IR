@@ -67,7 +67,7 @@ class DataTrainingArguments:
     the command line.
     """
     max_seq_length: int = field(
-        default=256,
+        default=128,
         metadata={
             "help": "The maximum total input sequence length after tokenization. Sequences longer "
             "than this will be truncated, sequences shorter will be padded."
@@ -93,9 +93,9 @@ class DataTrainingArguments:
         default='recipes/base.yaml', metadata={"help": "The input file name for the Neural Magic pruning config"}
     )
     max_train_samples: Optional[int] = field(
-        default=8000000,
+        default=800000,
         metadata={
-            "help": "Since the MSMARCO Dataset is 79551622 items we subsample to ~10%"
+            "help": "Since the MSMARCO Dataset is 79551622 items we subsample to ~1% as after that we do not see improvment in MRR"
         },
     )
     do_onnx_export: bool = field(
@@ -125,7 +125,7 @@ class ModelArguments:
         default="bert-base-uncased", metadata={"help": "Student model"}
     )
     temperature: Optional[float] = field(
-        default=2.0, metadata={"help": "Temperature applied to teacher softmax for distillation."}
+        default=1.0, metadata={"help": "Temperature applied to teacher softmax for distillation."}
     )
     distill_hardness: Optional[float] = field(
         default=1.0, metadata={"help": "Proportion of loss coming from teacher model."}
@@ -325,6 +325,7 @@ def main():
         result["label"] = examples["label"]
         return result
     datasets = datasets.map(preprocess_function, batched=True, load_from_cache_file=True)
+    datasets['train'] = datasets['train'].shuffle(seed=training_args.seed)
     if data_args.max_train_samples is not None:
         datasets["train"] = datasets["train"].select(range(data_args.max_train_samples))
     traindataset = datasets["train"]
@@ -342,7 +343,7 @@ def main():
     else:
         data_collator = None
 
-    optim = load_optimizer(student_model, TrainingArguments)
+    optim = load_optimizer(student_model, training_args)
     steps_per_epoch = math.ceil(len(datasets["train"]) / (training_args.per_device_train_batch_size*training_args._n_gpu))
     manager = ScheduledModifierManager.from_yaml(data_args.nm_prune_config)
     optim = ScheduledOptimizer(optim, student_model, manager, steps_per_epoch=steps_per_epoch, loggers=None)
