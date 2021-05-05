@@ -36,9 +36,7 @@ class DistillRankingTrainer(Trainer):
         """
         input_device = inputs["input_ids"].device
         outputs = model(**inputs)
-        loss = outputs['loss'][1]#torch.mean(outputs['loss'])
-        logit_neg = F.softmax(outputs['logits'][:, :1]/ self.temperature, dim=-1)
-        logit_pos = F.softmax(outputs['logits'][:, 1:2]/ self.temperature, dim=-1)
+        loss = outputs['loss']
         if self.teacher is not None:
             self.teacher = self.teacher.to(input_device)
             student_logit_neg = F.softmax(outputs['logits'][:, :1]/ self.temperature, dim=-1)
