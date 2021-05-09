@@ -12,7 +12,7 @@ import statistics
 
 from collections import Counter
 
-MaxMRRRank = 100
+MaxMRRRank = 10
 
 def load_reference_from_stream(f):
     """Load Reference reference relevant passages

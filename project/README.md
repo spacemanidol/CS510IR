@@ -8,18 +8,52 @@ python src/rerank.py --model_name_or_path base/checkpoint-4000 --candidate_filen
 python src/rerank.py --model_name_or_path base/checkpoint-5000 --candidate_filename base5000
 python src/rerank.py --model_name_or_path base/checkpoint-6000 --candidate_filename base6000
 
-python src/ms_marco_eval.py data/qrels.dev.tsv base1000 >> base_results.txt
-python src/ms_marco_eval.py data/qrels.dev.tsv base2000 >> base_results.txt
-python src/ms_marco_eval.py data/qrels.dev.tsv base3000 >> base_results.txt
-python src/ms_marco_eval.py data/qrels.dev.tsv base4000 >> base_results.txt
-python src/ms_marco_eval.py data/qrels.dev.tsv base5000 >> base_results.txt
-python src/ms_marco_eval.py data/qrels.dev.tsv base6000 >> base_results.txt
+python src/ms_marco_eval.py data/qrels.dev.tsv run/base1000 >> base_results.txt
+python src/ms_marco_eval.py data/qrels.dev.tsv run/base2000 >> base_results.txt
+python src/ms_marco_eval.py data/qrels.dev.tsv run/base3000 >> base_results.txt
+python src/ms_marco_eval.py data/qrels.dev.tsv run/base4000 >> base_results.txt
+python src/ms_marco_eval.py data/qrels.dev.tsv run/base5000 >> base_results.txt
+python src/ms_marco_eval.py data/qrels.dev.tsv run/base6000 >> base_results.txt
 
+# BERT LARGE
+0.365
 
-
-<pre>Results:
+# Baseline 
+Results:
 #####################
 MRR @10: 0.18741227770955546
 QueriesRanked: 6980
+Recal @10: 0.39856733524355303
 #####################
-</pre> 
+
+# bert-base-uncased
+#####################
+MRR @10: 0.18728099356841885
+QueriesRanked: 501
+Recal @10: 0.3912175648702595
+#####################
+#####################
+MRR @10: 0.196945790957767
+QueriesRanked: 501
+Recal @10: 0.3912175648702595
+#####################
+#####################
+MRR @10: 0.2183506003865285
+QueriesRanked: 501
+Recal @10: 0.40119760479041916
+#####################
+#####################
+MRR @10: 0.21591103507271178
+QueriesRanked: 501
+Recal @10: 0.4171656686626746
+#####################
+#####################
+MRR @10: 0.20703513607705226
+QueriesRanked: 501
+Recal @10: 0.39520958083832336
+#####################
+#####################
+MRR @10: 0.20766245287203372
+QueriesRanked: 501
+Recal @10: 0.3972055888223553
+#####################
