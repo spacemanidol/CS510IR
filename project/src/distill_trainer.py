@@ -28,25 +28,26 @@ class DistillRankingTrainer(Trainer):
         self.criterion = criterion # coult be nn.KLDivLoss() or nn.MSELoss() or nn.CrossEntropyLoss(), 
         self.max_sequence_length = max_sequence_length
         if self.teacher is None:
-            self.distill_hardness = 0.0
+            self.distill_hardness = 0.0  
+
 
     def compute_loss(self, model, inputs, return_outputs=False):
+        """                                                                                              
+        How the loss is computed by Trainer. Modified for Distilation using student teacher framework modified for distilation.                                                                                  
         """
-        How the loss is computed by Trainer. Modified for Distilation using student teacher framework modified for distilation. 
-        """
-        input_device = inputs["input_ids"].device
         outputs = model(**inputs)
-        loss = outputs['loss']
+        loss = outputs["loss"]
+        logits_student = outputs["logits"]
         if self.teacher is not None:
+            input_device = inputs["input_ids"].device
             self.teacher = self.teacher.to(input_device)
-            student_logit_neg = outputs['logits'][:, :1]
-            student_logit_pos = outputs['logits'][:, 1:2]
             with torch.no_grad():
-                teacher_outputs = self.teacher(**inputs)
-                teacher_logit_neg = teacher_outputs['logits'][:, :1]
-                teacher_logit_pos = teacher_outputs['logits'][:, 1:2]
-            loss_pos = F.kl_div( input=student_logit_pos, target=teacher_logit_pos, reduction="batchmean",) * (self.temperature ** 2)
-            loss_neg = F.kl_div( input=student_logit_neg, target=teacher_logit_neg, reduction="batchmean",) * (self.temperature ** 2)
-            teacher_loss = torch.stack([loss_pos,loss_neg])
-            loss = ((1-self.distill_hardness) * loss) + torch.abs(((self.distill_hardness * teacher_loss)))
-        return (loss, outputs) if return_outputs else loss       
+                teacher_outputs = self.teacher(
+                        input_ids=inputs["input_ids"],
+                        token_type_ids=inputs["token_type_ids"],
+                        attention_mask=inputs["attention_mask"],
+                )
+            logits_teacher = teacher_outputs["logits"]
+            loss_distill = F.kl_div( input=logits_student, target=logits_teacher, reduction="batchmean",) * (self.temperature ** 2)
+            loss = ((1-self.distill_hardness) * loss) + torch.abs((self.distill_hardness * loss_distill))
+        return (loss, outputs) if return_outputs else loss
